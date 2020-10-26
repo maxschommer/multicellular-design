@@ -77,6 +77,7 @@ def make_sphere_node(resolution: int, diameter: float):
 
 
 LOW_RES_SPHERE = make_sphere_node(resolution=10, diameter=1)
+HIGH_RES_SPHERE = make_sphere_node(resolution=20, diameter=1)
 
 
 class Cell():
@@ -90,10 +91,15 @@ class Cell():
                      [1, 0, 0, 0], dtype=float),
                  angular_velocity: np.ndarray = np.asarray(
                      [0, 0, 0], dtype=float),
-                 mass: float = 1.0
+                 mass: float = 1.0,
+                 resolution="low"
                  ):
         # Define model geometry
-        self.node = copy.deepcopy(LOW_RES_SPHERE)
+        self.resolution = resolution
+        if resolution == "low":
+            self.node = copy.deepcopy(LOW_RES_SPHERE)
+        if resolution == "high":
+            self.node = copy.deepcopy(HIGH_RES_SPHERE)
         self.node_path = render.attachNewNode(self.node)
 
         # Set position and orientation
@@ -111,7 +117,8 @@ class Cell():
                     diameter=self.diameter,
                     position=self.position + direction_preference * self.diameter,
                     velocity=self.velocity,
-                    orientation=self.orientation)
+                    orientation=self.orientation,
+                    resolution=self.resolution)
 
     @property
     def diameter(self):
@@ -215,6 +222,10 @@ class CellPhysics():
         for cell in value:
             self.add_cell(cell)
 
+    @property
+    def bounding_box(self):
+        return np.min(self._positions, axis=1), np.max(self._positions, axis=1)
+
     def _add_velocity(self, velocity: np.ndarray):
         assert isinstance(
             velocity, np.ndarray), "velocity must be a valid numpy ndarray."
@@ -306,9 +317,10 @@ class MultiCell(ShowBase):
 
         self.last_split = 0
         self.taskMgr.add(self.update, "update")
+        self.taskMgr.add(self.control_camera, "control_camera")
 
-        self.cells = [Cell(render), Cell(
-            render, position=np.asarray([12, 0, 0]))]
+        self.cells = [Cell(render, resolution="high"), Cell(
+            render, position=np.asarray([12, 0, 0]), resolution="high")]
         self.cell_physics = CellPhysics(
             self.cells, force_const=200, ignore_ratio=1.1)
         # myMaterial = Material()
@@ -319,6 +331,22 @@ class MultiCell(ShowBase):
         # cell_node.setMaterial(myMaterial)
         # cell_node.setDepthWrite(False)  # Disable
         # cell_node.setAntialias(AntialiasAttrib.MPolygon)
+
+    def control_camera(self, task):
+        horz_fov, vert_fov = self.camLens.fov * DEG
+        min_bb, max_bb = self.cell_physics.bounding_box
+        x_over = np.max([np.abs(min_bb[0]), np.abs(max_bb[0])])
+        y_over = np.max([np.abs(min_bb[1]), np.abs(max_bb[1])])
+
+        cam_height = self.camera.getPos()[2]
+        cam_extent_x = cam_height * np.sin(horz_fov / 2)
+        cam_extend_y = cam_height * np.sin(vert_fov / 2)
+
+        if cam_extent_x < x_over or cam_extend_y < y_over:
+            cam_move_amount = np.max(
+                [x_over - cam_extent_x, y_over - cam_extend_y])
+            self.camera.setPos(0, 0, cam_height + .2 * cam_move_amount)
+        return Task.cont
 
     def update(self, task):
 
