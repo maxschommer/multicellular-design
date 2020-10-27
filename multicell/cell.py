@@ -1,13 +1,9 @@
 import copy
 import numbers
 import numpy as np
-from panda3d.core import NodePath
-
-from utils import make_sphere_node
+from panda3d.core import NodePath, TransparencyAttrib
 from config import MICROMETER
-
-LOW_RES_SPHERE = make_sphere_node(resolution=10, diameter=1)
-HIGH_RES_SPHERE = make_sphere_node(resolution=20, diameter=1)
+from geom_gen import HIGH_RES_SPHERE, LOW_RES_SPHERE
 
 
 class Cell():
@@ -22,7 +18,8 @@ class Cell():
                  angular_velocity: np.ndarray = np.asarray(
                      [0, 0, 0], dtype=float),
                  mass: float = 1.0,
-                 resolution="low"
+                 resolution="low",
+                 rgba=np.asarray([1, 1, 1, .5])
                  ):
         # Define model geometry
         self.resolution = resolution
@@ -31,6 +28,10 @@ class Cell():
         if resolution == "high":
             self.node = copy.deepcopy(HIGH_RES_SPHERE)
         self.node_path = render.attachNewNode(self.node)
+        self.node_path.setTransparency(TransparencyAttrib.MAlpha)
+        self.node_path.setColor(*rgba)
+        # self.node_path.setTransparency(True)
+        self.node_path.setDepthWrite(False)
 
         # Set position and orientation
         self.diameter = diameter
@@ -48,7 +49,8 @@ class Cell():
                     position=self.position + direction_preference * self.diameter,
                     velocity=self.velocity,
                     orientation=self.orientation,
-                    resolution=self.resolution)
+                    resolution=self.resolution,
+                    rgba=[*np.abs(np.random.rand(3, 1)), 0.5])
 
     @property
     def diameter(self):

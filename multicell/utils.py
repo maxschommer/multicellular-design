@@ -14,8 +14,11 @@ def make_rand_vector(dims):
     return np.asarray([x / mag for x in vec])
 
 
-def make_node_from_mesh(points: np.ndarray, faces: np.ndarray, normals: np.ndarray):
-    vertex_normal_format = GeomVertexFormat.get_v3n3()
+def make_node_from_mesh(points: np.ndarray,
+                        faces: np.ndarray,
+                        normals: np.ndarray,
+                        rgba: np.ndarray = np.asarray([1, 1, 1, 1])):
+    vertex_normal_format = GeomVertexFormat.get_v3n3c4()
 
     v_data = GeomVertexData('sphere', vertex_normal_format, Geom.UHStatic)
     num_rows = np.max([points.shape[0], faces.shape[0]])
@@ -23,10 +26,12 @@ def make_node_from_mesh(points: np.ndarray, faces: np.ndarray, normals: np.ndarr
 
     vertex_data = GeomVertexWriter(v_data, 'vertex')
     normal_data = GeomVertexWriter(v_data, 'normal')
+    color_data = GeomVertexWriter(v_data, 'color')
+
     for point, normal in zip(points, normals):
         vertex_data.addData3(point[0], point[1], point[2])
         normal_data.addData3(normal[0], normal[1], normal[2])
-
+        color_data.addData4(rgba[0], rgba[1], rgba[2], rgba[3])
     geom = Geom(v_data)
     for face in faces:
         tri = GeomTriangles(Geom.UHStatic)
@@ -45,11 +50,14 @@ def make_node_from_mesh(points: np.ndarray, faces: np.ndarray, normals: np.ndarr
     return node
 
 
-def make_sphere_node(resolution: int, diameter: float):
+def make_sphere_node(resolution: int,
+                     diameter: float,
+                     rgba: np.ndarray = np.asarray([1, 1, 1, 1])):
     points, faces = meshzoo.uv_sphere(
         num_points_per_circle=resolution,
         num_circles=resolution, radius=diameter / 2)
     normals = points / np.expand_dims(np.linalg.norm(points, axis=1), 1)
     return make_node_from_mesh(np.asarray(points),
                                np.asarray(faces),
-                               np.asarray(normals))
+                               np.asarray(normals),
+                               np.asarray(rgba))
