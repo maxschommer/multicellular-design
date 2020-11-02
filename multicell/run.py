@@ -11,7 +11,7 @@ import numpy as np
 
 from utils import make_rand_vector
 from config import MICROMETER, DEG
-from cell import Cell
+from cell import Cell, CellSignalType
 from physics import CellPhysics
 
 
@@ -36,9 +36,12 @@ class MultiCell(ShowBase):
         self.taskMgr.add(self.update, "update")
         self.taskMgr.add(self.control_camera, "control_camera")
 
-        self.cells = [Cell(render, resolution="high")]
+        cell = Cell(render=render, resolution="high")
+        cell.add_signal(
+            render=render, signal_type=CellSignalType.SHORT_DISTANCE)
+        self.cells = [cell]
         self.cell_physics = CellPhysics(
-            self.cells, force_const=200, ignore_ratio=1.1)
+            self.cells, opposing_force=200, attraction_force=50, ignore_ratio=1.1)
         # myMaterial = Material()
         # myMaterial.setShininess(80)  # Make this material shiny
         # myMaterial.setAmbient((0, 0, 1, 1))  # Make this material blue
@@ -102,7 +105,7 @@ class MultiCell(ShowBase):
         #     cell.position = cell_pos
 
         sim_t = time.time() - t0
-        print(len(self.cells), sim_t)
+        # print(len(self.cells), sim_t)
         return Task.cont
 
 

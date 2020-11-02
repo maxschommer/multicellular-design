@@ -1,4 +1,5 @@
 from typing import List, Optional
+import copy
 import numbers
 import numpy as np
 import cupy as cp
@@ -7,19 +8,24 @@ from scipy.spatial import cKDTree
 
 from numba import jit
 from cell import Cell
+from config import MICROMETER
 
 
-def get_forces_oct_tree(positions, force_const, num_neighbors=10, radii=None, ignore_ratio=1.5):
-    kd_tree = cKDTree(positions)
-
+def get_forces_oct_tree(positions: np.ndarray,
+                        kd_tree: cKDTree,
+                        acttraction_force: float,
+                        opposing_force: float,
+                        num_neighbors=10,
+                        radii=None,
+                        ignore_ratio=1.5):
     num_neighbors = num_neighbors if num_neighbors <= positions.shape[0] else positions.shape[0]
     n_dist, n_idx = kd_tree.query(positions, k=num_neighbors)
     # print(radii[n_idx] + radii)
     dist_thresh = (radii[n_idx] + np.expand_dims(radii, 1)) < n_dist
     ignore_thresh = (radii[n_idx] + np.expand_dims(radii, 1)
                      ) * ignore_ratio < n_dist
-    force_dirs = np.ones_like(dist_thresh, dtype=int)
-    force_dirs[dist_thresh] = -1
+    force_dirs = np.full_like(dist_thresh, opposing_force, dtype=int)
+    force_dirs[dist_thresh] = -acttraction_force
     force_dirs[ignore_thresh] = 0
     diff = np.expand_dims(positions, 1) - \
         positions[n_idx]
@@ -29,7 +35,7 @@ def get_forces_oct_tree(positions, force_const, num_neighbors=10, radii=None, ig
 
     all_forces = np.where(np.isnan(all_forces), 0, all_forces)
 
-    forces = np.sum(all_forces, axis=1) * force_const
+    forces = np.sum(all_forces, axis=1)
 
     return forces
 
@@ -62,14 +68,18 @@ def get_forces(positions: np.ndarray, force_const: float = 1):
 
 class CellPhysics():
     def __init__(self, cells: Optional[List[Cell]] = None,
-                 force_const: float = 1.0,
+                 opposing_force: float = 1.0,
+                 attraction_force: float = 1.0,
                  ignore_ratio=1.5):
         self._cells = []
+        self._active_signals = []
         self._positions = None
         self._velocities = None
         self._radii = None
         self._masses = None
-        self.force_const = force_const
+        self._clock = 0
+        self.opposing_force = opposing_force
+        self.attraction_force = attraction_force
         self.ignore_ratio = ignore_ratio
 
         if cells is not None:
@@ -139,8 +149,11 @@ class CellPhysics():
         self._add_radii(cell.diameter / 2)
 
     def update(self, dt: float, method: str = "cpu", num_neighbors=10, viscosity=0.5):
+
         if len(self.cells) == 0:
             return
+
+        kd_tree = cKDTree(self._positions)
 
         if method == "gpu":
             forces = get_forces_gpu(self._positions, self.force_const)
@@ -148,12 +161,23 @@ class CellPhysics():
             forces = get_forces(self._positions, self.force_const)
         if method == "oct":
             forces = get_forces_oct_tree(
-                self._positions, self.force_const,
+                self._positions,
+                kd_tree,
+                self.attraction_force,
+                self.opposing_force,
                 num_neighbors=num_neighbors,
                 radii=self._radii,
                 ignore_ratio=self.ignore_ratio)
 
         for i, cell in enumerate(self.cells):
+            signals = cell.update_signals(dt)
+            # Add new signals that recently became active
+            for signal in signals:
+                # print("Active signal!")
+                signal.is_active = True
+                signal.position = cell.position
+                self._active_signals.append(signal)
+
             cell_acc = forces[i, :] / cell.mass
             cell.velocity = (
                 cell.velocity * (1 - viscosity * dt)) + cell_acc * dt
@@ -161,3 +185,18 @@ class CellPhysics():
 
             self._positions[i, :] = cell.position
             self._velocities[i, :] = cell.velocity
+        new_active_signals = []
+        for active_signal in self._active_signals:
+            if not active_signal.is_active:
+                active_signal.diameter = 10 * MICROMETER
+            else:
+                new_active_signals.append(active_signal)
+
+            if active_signal.diameter < active_signal.max_diameter:
+                active_signal.diameter = active_signal.diameter + dt * active_signal.speed
+            else:
+                active_signal.is_active = False
+                active_signal.last_signaled = active_signal.clock
+
+        self._active_signals = new_active_signals
+        self._clock += dt
