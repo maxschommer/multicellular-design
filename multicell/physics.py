@@ -7,8 +7,8 @@ import scipy
 from scipy.spatial import cKDTree
 
 from numba import jit
-from cell import Cell
-from config import MICROMETER
+from multicell.cell import Cell
+from multicell.config import MICROMETER
 
 
 def get_forces_oct_tree(positions: np.ndarray,

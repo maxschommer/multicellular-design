@@ -3,8 +3,8 @@ import numbers
 from enum import Enum
 import numpy as np
 from panda3d.core import NodePath, TransparencyAttrib
-from config import MICROMETER
-from geom_gen import HIGH_RES_SPHERE, LOW_RES_SPHERE
+from multicell.config import MICROMETER
+from multicell.geom_gen import HIGH_RES_SPHERE, LOW_RES_SPHERE
 
 
 # Signal types:

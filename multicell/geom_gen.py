@@ -3,8 +3,8 @@ from enum import Enum
 
 import numpy as np
 
-from utils import make_sphere_node
-from config import MICROMETER
+from multicell.utils import make_sphere_node
+from multicell.config import MICROMETER
 
 
 LOW_RES_SPHERE = make_sphere_node(resolution=10, diameter=1)

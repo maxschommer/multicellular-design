@@ -9,10 +9,10 @@ from panda3d.core import (
 )
 import numpy as np
 
-from utils import make_rand_vector
-from config import MICROMETER, DEG
-from cell import Cell, CellSignalType
-from physics import CellPhysics
+from multicell.utils import make_rand_vector
+from multicell.config import MICROMETER, DEG
+from multicell.cell import Cell, CellSignalType
+from multicell.physics import CellPhysics
 
 
 class MultiCell(ShowBase):
