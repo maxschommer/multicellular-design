@@ -1,5 +1,6 @@
 import copy
 import numbers
+from typing import List
 from enum import Enum
 import numpy as np
 from panda3d.core import NodePath, TransparencyAttrib
@@ -81,6 +82,7 @@ class CellSignal(SphericalObject):
                  **kwargs
                  ):
 
+        self.signal_type = signal_type
         self.set_signal_properties(signal_type)
         self.resolution = resolution
 
@@ -104,22 +106,22 @@ class CellSignal(SphericalObject):
 
     def set_signal_properties(self, signal_type: CellSignalType):
         if signal_type == CellSignalType.CONTACT:
-            self.speed = 1
+            self.speed = 10
             self.max_frequency = 0.5
             self.rgba = np.asarray([1, 0, 0, .2])
             self.max_diameter = 30 * MICROMETER
         if signal_type == CellSignalType.SHORT_DISTANCE:
-            self.speed = 2
+            self.speed = 20
             self.max_frequency = 0.2
             self.rgba = np.asarray([0, 1, 0, 0.2])
             self.max_diameter = 40 * MICROMETER
         if signal_type == CellSignalType.ELECTRICAL:
-            self.speed = 10
+            self.speed = 100
             self.max_frequency = 0.05
             self.rgba = np.asarray([0, 0, 1, 0.2])
             self.max_diameter = 100 * MICROMETER
         if signal_type == CellSignalType.ELECTRO_MAGNETIC:
-            self.speed = 20
+            self.speed = 200
             self.max_frequency = 0.2
             self.rgba = np.asarray([1, 0, 1, 0.2])
             self.max_diameter = 400 * MICROMETER
@@ -147,6 +149,27 @@ class CellSignal(SphericalObject):
                 self.diameter = 10 * MICROMETER
             print(new_color)
             self.node_path.setColor(*new_color)
+
+    def reset(self):
+        """Resets the signal to the inactive signal diameter.
+        """
+        self.diameter = 1 * MICROMETER
+
+    def update(self, dt: float, position_kd_tree):
+        initial_idxs = position_kd_tree.query_ball_point(
+            self.position, self.diameter)
+        received_cells = []
+        if self.diameter < self.max_diameter:
+            self.diameter = self.diameter + dt * self.speed
+            new_idxs = position_kd_tree.query_ball_point(
+                self.position, self.diameter)
+            received_cells = np.setdiff1d(new_idxs, initial_idxs)
+
+        else:
+            self.is_active = False
+            self.last_signaled = self.clock
+
+        return received_cells
 
 
 class Cell(SphericalObject):
@@ -178,7 +201,20 @@ class Cell(SphericalObject):
 
     def divide(self,
                render: NodePath,
-               direction_preference: np.ndarray = np.asarray([1, 0, 0])):
+               direction_preference: np.ndarray = np.asarray([1, 0, 0])) -> "Cell":
+        """Divides the current cell by returning a new Cell object based on
+        the current cell. The direction that division occurs is given by
+        direction_preference vector.
+
+        Args:
+            render (NodePath): The render node to add the new Cell to.
+            direction_preference (np.ndarray, optional): A 1x3 vector indicating
+                which direction the cell should prefer to split in. Defaults to
+                np.asarray([1, 0, 0]).
+
+        Returns:
+            Cell: The new Cell which is the result of division.
+        """
         return Cell(render,
                     diameter=self.diameter,
                     position=self.position + direction_preference * self.diameter,
@@ -187,7 +223,16 @@ class Cell(SphericalObject):
                     resolution=self.resolution,
                     rgba=[*np.abs(np.random.rand(3, 1)), 0.5])
 
-    def update_signals(self, dt):
+    def update_signals(self, dt: float) -> List[CellSignal]:
+        """Increments all active signal's clocks, and then emits the signals
+        which are ready to be emitted.
+
+        Args:
+            dt (float): The change in time since the last update call
+
+        Returns:
+            List[CellSignal]: A list of cell signals to be emitted.
+        """
         sending_signals = []
         for signal in self.signals:
             signal.clock += dt
@@ -196,7 +241,13 @@ class Cell(SphericalObject):
                 sending_signals.append(signal)
         return sending_signals
 
-    def add_signal(self, render, signal_type: CellSignalType):
+    def add_signal(self, render: NodePath, signal_type: CellSignalType):
+        """Adds a new signal to the Cell which will emit periodically.
+
+        Args:
+            render (NodePath): The render node to add the signal to.
+            signal_type (CellSignalType): The signal type to add.
+        """
         self.signals.append(CellSignal(
             render=render,
             signal_type=signal_type,
@@ -208,5 +259,4 @@ class Cell(SphericalObject):
         ))
 
     def receive_signal(self, signal_type: CellSignalType):
-        # Do stuff?
-        pass
+        print(f"Received cell signal {signal_type}")

@@ -20,7 +20,7 @@ def get_forces_oct_tree(positions: np.ndarray,
                         ignore_ratio=1.5):
     num_neighbors = num_neighbors if num_neighbors <= positions.shape[0] else positions.shape[0]
     n_dist, n_idx = kd_tree.query(positions, k=num_neighbors)
-    # print(radii[n_idx] + radii)
+
     dist_thresh = (radii[n_idx] + np.expand_dims(radii, 1)) < n_dist
     ignore_thresh = (radii[n_idx] + np.expand_dims(radii, 1)
                      ) * ignore_ratio < n_dist
@@ -148,36 +148,34 @@ class CellPhysics():
         self._add_mass(cell.mass)
         self._add_radii(cell.diameter / 2)
 
-    def update(self, dt: float, method: str = "cpu", num_neighbors=10, viscosity=0.5):
+    def update(self, dt: float, num_neighbors=10, viscosity=0.5):
 
         if len(self.cells) == 0:
             return
 
         kd_tree = cKDTree(self._positions)
 
-        if method == "gpu":
-            forces = get_forces_gpu(self._positions, self.force_const)
-        if method == "cpu":
-            forces = get_forces(self._positions, self.force_const)
-        if method == "oct":
-            forces = get_forces_oct_tree(
-                self._positions,
-                kd_tree,
-                self.attraction_force,
-                self.opposing_force,
-                num_neighbors=num_neighbors,
-                radii=self._radii,
-                ignore_ratio=self.ignore_ratio)
+        forces = get_forces_oct_tree(
+            self._positions,
+            kd_tree,
+            self.attraction_force,
+            self.opposing_force,
+            num_neighbors=num_neighbors,
+            radii=self._radii,
+            ignore_ratio=self.ignore_ratio)
 
         for i, cell in enumerate(self.cells):
-            signals = cell.update_signals(dt)
-            # Add new signals that recently became active
-            for signal in signals:
-                # print("Active signal!")
-                signal.is_active = True
-                signal.position = cell.position
-                self._active_signals.append(signal)
+            # First update signals and get all of the signals which need to
+            # be emitted from the cells.
+            emit_signals = cell.update_signals(dt)
+            # When a signal is emitted, it becomes "active" meaning that it is
+            # currently able to interact with other cells.
+            for emit_signal in emit_signals:
+                emit_signal.is_active = True
+                emit_signal.position = cell.position
+                self._active_signals.append(emit_signal)
 
+            # Next update cell positions
             cell_acc = forces[i, :] / cell.mass
             cell.velocity = (
                 cell.velocity * (1 - viscosity * dt)) + cell_acc * dt
@@ -185,18 +183,21 @@ class CellPhysics():
 
             self._positions[i, :] = cell.position
             self._velocities[i, :] = cell.velocity
+
+        # Update all of the active signals by stepping the signals, or resetting
+        # the signals.
         new_active_signals = []
         for active_signal in self._active_signals:
+            # Check the signals internal state (if it should turn inactive)
             if not active_signal.is_active:
-                active_signal.diameter = 10 * MICROMETER
+                active_signal.reset()
             else:
+                # Signals which recently became active should be added to the
+                # "active signals" list.
                 new_active_signals.append(active_signal)
-
-            if active_signal.diameter < active_signal.max_diameter:
-                active_signal.diameter = active_signal.diameter + dt * active_signal.speed
-            else:
-                active_signal.is_active = False
-                active_signal.last_signaled = active_signal.clock
-
+            received_cells_idxs = active_signal.update(dt, kd_tree)
+            for received_cell_idx in received_cells_idxs:
+                self.cells[received_cell_idx].receive_signal(
+                    active_signal.signal_type)
         self._active_signals = new_active_signals
         self._clock += dt
