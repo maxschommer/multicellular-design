@@ -1,18 +1,12 @@
 import copy
 import numbers
-from typing import List
+from typing import List, Optional
 from enum import Enum
 import numpy as np
 from panda3d.core import NodePath, TransparencyAttrib
 from multicell.config import MICROMETER
 from multicell.geom_gen import HIGH_RES_SPHERE, LOW_RES_SPHERE
 
-
-# Signal types:
-# Direct Contact
-# Short distance signal
-# Electrical signals (EM)
-#   High speed, very little gradient
 
 class CellSignalType(Enum):
     # Speed is in micrometers per second
@@ -177,9 +171,11 @@ class Cell(SphericalObject):
 
     def __init__(self, render: NodePath,
                  diameter: float = 10 * MICROMETER,
-                 resolution="low",
-                 rgba=np.asarray([1, 1, 1, .5]),
-                 **kwargs
+                 resolution: str = "low",
+                 rgba: np.ndarray = np.asarray([1, 1, 1, .5]),
+                 code: str = "",
+                 resources: Optional[dict] = None
+                 ** kwargs
                  ):
         # Define model geometry
         self.rgba = rgba
@@ -194,10 +190,23 @@ class Cell(SphericalObject):
         self.node_path.setDepthWrite(False)
 
         self.signals = []
+        self.signals_received = set()
+
+        # Set cell state
+        self.resources =
 
         # # Set position and orientation
         self.diameter = diameter
         super().__init__(**kwargs)
+
+    @property
+    def state(self):
+        return self._state
+
+    @state.setter
+    def state(self, value):
+        for key in value:
+            self._state[key] = value[key]
 
     def divide(self,
                render: NodePath,
@@ -221,7 +230,8 @@ class Cell(SphericalObject):
                     velocity=self.velocity,
                     orientation=self.orientation,
                     resolution=self.resolution,
-                    rgba=[*np.abs(np.random.rand(3, 1)), 0.5])
+                    rgba=[*np.abs(np.random.rand(3, 1)), 0.5],
+                    code=self.code)
 
     def update_signals(self, dt: float) -> List[CellSignal]:
         """Increments all active signal's clocks, and then emits the signals
@@ -259,4 +269,24 @@ class Cell(SphericalObject):
         ))
 
     def receive_signal(self, signal_type: CellSignalType):
-        print(f"Received cell signal {signal_type}")
+        self.signals_received.add(signal_type)
+
+    def execute_user_code(self):
+        compiled_code = compile(self.code, '<string>', 'exec')
+
+        exec_globals = {
+            "__builtins__": None
+        }
+        exec_locals = {
+            "received_signals": self.signals_received,
+            "state": self.state,
+            "actions": {},
+            "print": print
+        }
+
+        exec(compiled_code, exec_globals, exec_locals)
+
+        actions = exec_locals["actions"]
+
+    def perform_actions(self, actions):
+        pass

@@ -136,21 +136,10 @@ class MultiCell(ShowBase):
         dt = globalClock.getDt()
         self.cell_physics.update(
             dt, num_neighbors=20, viscosity=10)
-        # for i, cell in enumerate(self.cells):
-        #     res_f = np.asarray([0, 0, 0], dtype=float)
-        #     for j, o_cell in enumerate(self.cells):
-        #         if i != j:
-        #            np.sum(diff / norm(diff)**2)
-        #             res_f += (cell.position - o_cell.position) / \
-        #                 np.linalg.norm(cell.position - o_cell.position)**2
-        #             # print(res_f)
-        #     # print(res_f)
-        #     # cell_forces.append(res_f)
-        #     cell_acc = res_f / cell.mass
-        #     cell_vel = cell.velocity + cell_acc * dt
-        #     cell_pos = cell.position + cell_vel * dt
-        #     cell.velocity = cell_vel
-        #     cell.position = cell_pos
+
+        # Execute the cells internal code
+        for i, cell in enumerate(self.cells):
+            cell.execute_code()
 
         sim_t = time.time() - t0
         # print(len(self.cells), sim_t)
