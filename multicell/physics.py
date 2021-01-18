@@ -2,12 +2,11 @@ from typing import List, Optional
 import copy
 import numbers
 import numpy as np
-import cupy as cp
 import scipy
 from scipy.spatial import cKDTree
 
 from numba import jit
-from multicell.cell import Cell
+from multicell.cell import Cell, CellSignal
 from multicell.config import MICROMETER
 
 
@@ -40,18 +39,6 @@ def get_forces_oct_tree(positions: np.ndarray,
     return forces
 
 
-def get_forces_gpu(positions, force_const):
-    positions = cp.asarray(positions)
-    diff = cp.expand_dims(positions, 0) - \
-        cp.expand_dims(positions, 1)
-
-    dist = cp.sqrt(np.sum(diff**2, axis=-1))
-    all_forces = diff / np.expand_dims(dist, 2)**2
-    all_forces = cp.where(np.isnan(all_forces), 0, all_forces)
-    forces = cp.sum(all_forces, axis=0) * force_const
-    return cp.asnumpy(forces)
-
-
 @jit(nopython=True)
 def get_forces(positions: np.ndarray, force_const: float = 1):
     diff = np.expand_dims(positions, 0) - \
@@ -72,12 +59,12 @@ class CellPhysics():
                  attraction_force: float = 1.0,
                  ignore_ratio=1.5):
         self._cells = []
-        self._active_signals = []
+        self._active_signals: List[CellSignal] = []
         self._positions = None
         self._velocities = None
         self._radii = None
         self._masses = None
-        self._clock = 0
+        self._clock = 0.0
         self.opposing_force = opposing_force
         self.attraction_force = attraction_force
         self.ignore_ratio = ignore_ratio
@@ -149,6 +136,7 @@ class CellPhysics():
         self._add_radii(cell.diameter / 2)
 
     def update(self, dt: float, num_neighbors=10, viscosity=0.5):
+        self._clock += dt
 
         if len(self.cells) == 0:
             return
@@ -167,7 +155,8 @@ class CellPhysics():
         for i, cell in enumerate(self.cells):
             # First update signals and get all of the signals which need to
             # be emitted from the cells.
-            emit_signals = cell.update_signals(dt)
+            cell.update(dt)
+            emit_signals = cell.get_signals()
             # When a signal is emitted, it becomes "active" meaning that it is
             # currently able to interact with other cells.
             for emit_signal in emit_signals:
@@ -200,4 +189,3 @@ class CellPhysics():
                 self.cells[received_cell_idx].receive_signal(
                     active_signal.signal_type)
         self._active_signals = new_active_signals
-        self._clock += dt
